@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indev 2D - Enhanced Edition</title>
+    <link rel="icon" type="image/png" href="icon.jpg">
+    <style>
+        :root {
+            --ui-border: #2c3e50;
+            --ui-bg: rgba(15, 20, 25, 0.85);
+            --accent: #00e676;
+        }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            user-select: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+        }
+        .hotbar {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            background: var(--ui-bg);
+            padding: 8px;
+            border: 3px solid var(--ui-border);
+            gap: 10px;
+            border-radius: 8px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        }
+        .slot {
+            width: 45px;
+            height: 45px;
+            border: 3px solid #444;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #222;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        .slot::after {
+            content: attr(data-key);
+            position: absolute;
+            top: 2px;
+            left: 4px;
+            font-size: 10px;
+            color: #aaa;
+            font-weight: bold;
+        }
+        .slot.selected {
+            border-color: var(--accent);
+            transform: translateY(-5px) scale(1.1);
+            box-shadow: 0 5px 15px rgba(0, 230, 118, 0.3);
+            background: #333;
+        }
+        .block-icon {
+            width: 28px;
+            height: 28px;
+            box-shadow: inset -4px -4px rgba(0,0,0,0.3), inset 2px 2px rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+        #stats {
+            background: var(--ui-bg);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            border-left: 4px solid var(--accent);
+            line-height: 1.6;
+            backdrop-filter: blur(4px);
+        }
+        .controls-hint {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: var(--ui-bg);
+            padding: 12px;
+            font-size: 13px;
+            border-radius: 8px;
+            color: #ddd;
+            border: 1px solid #333;
+        }
+        .highlight { color: var(--accent); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-overlay">
+        <div id="stats">
+            <strong>INDEV 2.0 Alpha 0.0.1</strong><br>
+            FPS: <span id="fps">0</span><br>
+            POS: <span id="posX">0</span>, <span id="posY">0</span>
+        </div>
+    </div>
+
+    <div class="controls-hint">
+        <span class="highlight">WASD</span>: Move & Jump<br>
+        <span class="highlight">L-Click</span>: Break | <span class="highlight">R-Click</span>: Place<br>
+        <span class="highlight">1-4</span> or <span class="highlight">Scroll</span>: Switch Block
+    </div>
+
+    <div class="hotbar" id="hotbar"></div>
+</div>
+
+<script>
+/**
+ * CORE CONFIGURATION
+ */
+const CONFIG = {
+    TILE_SIZE: 32,
+    GRAVITY: 0.35,
+    FRICTION: 0.82,
+    ACCEL: 0.8,
+    JUMP_FORCE: 8.5,
+    MAX_SPEED: 6,
+    COLORS: {
+        SKY_TOP: '#1A237E',
+        SKY_BOTTOM: '#64B5F6',
+        DIRT: '#795548',
+        GRASS: '#4CAF50',
+        STONE: '#78909C',
+        WOOD: '#5D4037',
+        LEAVES: '#2E7D32'
+    }
+};
+
+const BLOCKS = { AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, WOOD: 4, LEAVES: 5 };
+const BLOCK_TYPES = ['DIRT', 'STONE', 'WOOD', 'LEAVES'];
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const fpsDisplay = document.getElementById('fps');
+
+/**
+ * PARTICLES FOR "GAMEPLAY JUICE"
+ */
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 6;
+        this.vy = (Math.random() - 2) * 4;
+        this.size = Math.random() * 6 + 2;
+        this.color = color;
+        this.life = 1.0;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.2;
+        this.life -= 0.03;
+    }
+    draw(ctx, camera) {
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.life;
+        ctx.fillRect(this.x - camera.x, this.y - camera.y, this.size, this.size);
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+/**
+ * PLAYER CLASS
+ */
+class Player {
+    constructor() {
+        this.x = 150;
+        this.y = 0;
+        this.width = 20;
+        this.height = 44;
+        this.vx = 0;
+        this.vy = 0;
+        this.grounded = false;
+        this.inventoryIndex = 0; // Start at 0 (Dirt)
+        this.selectedBlock = BLOCKS.DIRT;
+        this.facingRight = true;
+    }
+
+    update(world) {
+        // Horizontal Movement
+        if (keys['KeyA'] || keys['ArrowLeft']) { this.vx -= CONFIG.ACCEL; this.facingRight = false; }
+        if (keys['KeyD'] || keys['ArrowRight']) { this.vx += CONFIG.ACCEL; this.facingRight = true; }
+        
+        this.vx *= CONFIG.FRICTION;
+        if (Math.abs(this.vx) < 0.1) this.vx = 0;
+        this.vx = Math.max(-CONFIG.MAX_SPEED, Math.min(CONFIG.MAX_SPEED, this.vx));
+
+        // Vertical Movement
+        if ((keys['Space'] || keys['KeyW'] || keys['ArrowUp']) && this.grounded) {
+            this.vy = -CONFIG.JUMP_FORCE;
+            this.grounded = false;
+        }
+        this.vy += CONFIG.GRAVITY;
+
+        // RESOLVE X AXIS
+        this.x += this.vx;
+        this.resolveCollisions(world, 'x');
+
+        // RESOLVE Y AXIS
+        this.y += this.vy;
+        this.resolveCollisions(world, 'y');
+    }
+
+    resolveCollisions(world, axis) {
+        const buffer = 1;
+        const left = Math.floor(this.x / CONFIG.TILE_SIZE);
+        const right = Math.floor((this.x + this.width) / CONFIG.TILE_SIZE);
+        const top = Math.floor(this.y / CONFIG.TILE_SIZE);
+        const bottom = Math.floor((this.y + this.height) / CONFIG.TILE_SIZE);
+
+        for (let ix = left; ix <= right; ix++) {
+            for (let iy = top; iy <= bottom; iy++) {
+                if (world.getBlock(ix, iy) !== BLOCKS.AIR) {
+                    if (axis === 'x') {
+                        if (this.vx > 0) this.x = ix * CONFIG.TILE_SIZE - this.width - buffer;
+                        else if (this.vx < 0) this.x = (ix + 1) * CONFIG.TILE_SIZE + buffer;
+                        this.vx = 0;
+                    } else {
+                        if (this.vy > 0) {
+                            this.y = iy * CONFIG.TILE_SIZE - this.height - buffer;
+                            this.grounded = true;
+                            this.vy = 0;
+                        } else if (this.vy < 0) {
+                            this.y = (iy + 1) * CONFIG.TILE_SIZE + buffer;
+                            this.vy = 0;
+                        }
+                    }
+                }
+            }
+        }
+        if (axis === 'y' && this.vy > 1) this.grounded = false;
+    }
+
+    draw(ctx, camera) {
+        const px = this.x - camera.x;
+        const py = this.y - camera.y;
+
+        // Hair (Back part)
+        ctx.fillStyle = '#3E2723'; // Dark brown
+        ctx.fillRect(px + 1, py - 2, 18, 20);
+
+        // Head/Skin
+        ctx.fillStyle = '#FFCC80'; // Skin tone
+        ctx.fillRect(px + 4, py, 12, 12);
+
+        // Eyes
+        ctx.fillStyle = '#fff';
+        if (this.facingRight) {
+            ctx.fillRect(px + 10, py + 4, 4, 4);
+            ctx.fillStyle = '#000'; ctx.fillRect(px + 12, py + 5, 2, 2); // pupil
+        } else {
+            ctx.fillRect(px + 6, py + 4, 4, 4);
+            ctx.fillStyle = '#000'; ctx.fillRect(px + 6, py + 5, 2, 2); // pupil
+        }
+
+        // Hair (Front bangs/sides)
+        ctx.fillStyle = '#4E342E'; 
+        ctx.fillRect(px + 2, py - 3, 16, 5); // top
+        if(this.facingRight) {
+            ctx.fillRect(px + 2, py + 2, 4, 14); // left side falling down
+        } else {
+            ctx.fillRect(px + 14, py + 2, 4, 14); // right side falling down
+        }
+
+        // Torso (Shirt)
+        ctx.fillStyle = '#8E24AA'; // Purple shirt
+        ctx.fillRect(px + 3, py + 12, 14, 16);
+        
+        // Arms
+        ctx.fillStyle = '#FFCC80';
+        ctx.fillRect(px, py + 14, 4, 12); // left arm
+        ctx.fillRect(px + 16, py + 14, 4, 12); // right arm
+        
+        // Sleeves
+        ctx.fillStyle = '#AB47BC';
+        ctx.fillRect(px, py + 12, 4, 6);
+        ctx.fillRect(px + 16, py + 12, 4, 6);
+
+        // Legs (Jeans)
+        ctx.fillStyle = '#1565C0'; // Dark blue jeans
+        // Walking animation split
+        const walkOffset = (this.vx !== 0) ? Math.sin(Date.now() / 100) * 3 : 0;
+        ctx.fillRect(px + 4, py + 28, 5, 16 + walkOffset); // left leg
+        ctx.fillRect(px + 11, py + 28, 5, 16 - walkOffset); // right leg
+        
+        // Shoes
+        ctx.fillStyle = '#424242';
+        ctx.fillRect(px + 3, py + 42 + walkOffset, 7, 3);
+        ctx.fillRect(px + 10, py + 42 - walkOffset, 7, 3);
+    }
+}
+
+/**
+ * WORLD CLASS
+ */
+class World {
+    constructor() {
+        this.data = {};
+        this.particles = [];
+    }
+
+    generate() {
+        for (let x = -100; x < 200; x++) {
+            const surface = Math.floor(Math.sin(x * 0.1) * 4) + Math.floor(Math.cos(x * 0.05) * 2) + 15;
+            
+            // Generate Terrain
+            for (let y = 0; y < 40; y++) {
+                let type = BLOCKS.AIR;
+                if (y === surface) type = BLOCKS.GRASS;
+                else if (y > surface && y < surface + Math.floor(Math.random()*2)+4) type = BLOCKS.DIRT;
+                else if (y >= surface + 4) type = BLOCKS.STONE;
+                
+                if (type !== BLOCKS.AIR) this.setBlock(x, y, type);
+            }
+
+            // Generate Trees (Structures)
+            if (Math.random() < 0.08) { // 8% chance per column to spawn a tree
+                const treeHeight = Math.floor(Math.random() * 3) + 4; // 4 to 6 blocks tall
+                
+                // Trunk
+                for (let i = 1; i <= treeHeight; i++) {
+                    this.setBlock(x, surface - i, BLOCKS.WOOD);
+                }
+                
+                // Leaves (3x3 grid around the top, minus corners)
+                for (let lx = -2; lx <= 2; lx++) {
+                    for (let ly = -2; ly <= 1; ly++) {
+                        // Create a rounded leaf cluster
+                        if (Math.abs(lx) === 2 && Math.abs(ly) === 2) continue;
+                        if (lx === 0 && ly > -2 && ly <= 0) continue; // Skip overriding trunk
+                        
+                        const targetX = x + lx;
+                        const targetY = surface - treeHeight + ly;
+                        if (this.getBlock(targetX, targetY) === BLOCKS.AIR) {
+                            this.setBlock(targetX, targetY, BLOCKS.LEAVES);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    getBlock(x, y) { return this.data[`${x},${y}`] || BLOCKS.AIR; }
+
+    setBlock(x, y, type, spawnParticles = false) {
+        if (spawnParticles) {
+            const color = this.getBlockColor(type === BLOCKS.AIR ? this.getBlock(x,y) : type);
+            for(let i=0; i<8; i++) {
+                this.particles.push(new Particle(x * CONFIG.TILE_SIZE + 16, y * CONFIG.TILE_SIZE + 16, color));
+            }
+        }
+        if (type === BLOCKS.AIR) delete this.data[`${x},${y}`];
+        else this.data[`${x},${y}`] = type;
+    }
+
+    render(ctx, camera) {
+        const startX = Math.floor(camera.x / CONFIG.TILE_SIZE) - 1;
+        const endX = startX + Math.ceil(canvas.width / CONFIG.TILE_SIZE) + 2;
+        const startY = Math.floor(camera.y / CONFIG.TILE_SIZE) - 1;
+        const endY = startY + Math.ceil(canvas.height / CONFIG.TILE_SIZE) + 2;
+
+        for (let x = startX; x < endX; x++) {
+            for (let y = startY; y < endY; y++) {
+                const block = this.getBlock(x, y);
+                if (block !== BLOCKS.AIR) {
+                    const bx = x * CONFIG.TILE_SIZE - camera.x;
+                    const by = y * CONFIG.TILE_SIZE - camera.y;
+                    
+                    // Base color
+                    ctx.fillStyle = this.getBlockColor(block);
+                    ctx.fillRect(bx, by, CONFIG.TILE_SIZE, CONFIG.TILE_SIZE);
+                    
+                    // Bevel Highlights (Top and Left)
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+                    ctx.fillRect(bx, by, CONFIG.TILE_SIZE, 3);
+                    ctx.fillRect(bx, by, 3, CONFIG.TILE_SIZE);
+
+                    // Bevel Shadows (Bottom and Right)
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+                    ctx.fillRect(bx, by + CONFIG.TILE_SIZE - 3, CONFIG.TILE_SIZE, 3);
+                    ctx.fillRect(bx + CONFIG.TILE_SIZE - 3, by, 3, CONFIG.TILE_SIZE);
+                    
+                    // Specific block detailing
+                    if (block === BLOCKS.GRASS) {
+                        ctx.fillStyle = CONFIG.COLORS.DIRT;
+                        ctx.fillRect(bx, by + 8, CONFIG.TILE_SIZE, CONFIG.TILE_SIZE - 8);
+                    }
+                }
+            }
+        }
+        
+        this.particles = this.particles.filter(p => {
+            p.update();
+            p.draw(ctx, camera);
+            return p.life > 0;
+        });
+    }
+
+    getBlockColor(id) {
+        switch(id) {
+            case BLOCKS.GRASS: return CONFIG.COLORS.GRASS;
+            case BLOCKS.DIRT: return CONFIG.COLORS.DIRT;
+            case BLOCKS.STONE: return CONFIG.COLORS.STONE;
+            case BLOCKS.WOOD: return CONFIG.COLORS.WOOD;
+            case BLOCKS.LEAVES: return CONFIG.COLORS.LEAVES;
+            default: return '#fff';
+        }
+    }
+}
+
+// Global instances
+const world = new World();
+const player = new Player();
+const camera = { x: 0, y: 0 };
+const keys = {};
+let mouse = { x: 0, y: 0 };
+
+function init() {
+    window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+        // Number keys for inventory (1 to 4)
+        if (e.key >= '1' && e.key <= BLOCK_TYPES.length.toString()) {
+            player.inventoryIndex = parseInt(e.key) - 1;
+            updateHotbarUI();
+        }
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+    
+    // Scroll to change block
+    window.addEventListener('wheel', e => {
+        if (e.deltaY > 0) player.inventoryIndex = (player.inventoryIndex + 1) % BLOCK_TYPES.length;
+        else player.inventoryIndex = (player.inventoryIndex - 1 + BLOCK_TYPES.length) % BLOCK_TYPES.length;
+        updateHotbarUI();
+    });
+
+    window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    });
+    window.dispatchEvent(new Event('resize'));
+
+    canvas.addEventListener('mousedown', handleMouse);
+    canvas.oncontextmenu = (e) => e.preventDefault();
+
+    // Build Hotbar
+    const hotbar = document.getElementById('hotbar');
+    BLOCK_TYPES.forEach((name, i) => {
+        const slot = document.createElement('div');
+        slot.className = `slot`;
+        slot.id = `slot-${i}`;
+        slot.setAttribute('data-key', i + 1);
+        slot.innerHTML = `<div class="block-icon" style="background:${CONFIG.COLORS[name]}"></div>`;
+        
+        // Allow clicking the UI to select
+        slot.addEventListener('mousedown', (e) => {
+            e.stopPropagation(); 
+            player.inventoryIndex = i;
+            updateHotbarUI();
+        });
+        
+        hotbar.appendChild(slot);
+    });
+
+    world.generate();
+    
+    // Find highest point for player to spawn
+    let spawnY = 0;
+    while(world.getBlock(Math.floor(player.x / CONFIG.TILE_SIZE), spawnY) === BLOCKS.AIR && spawnY < 40) {
+        spawnY++;
+    }
+    player.y = (spawnY - 2) * CONFIG.TILE_SIZE;
+
+    updateHotbarUI();
+    requestAnimationFrame(gameLoop);
+}
+
+function updateHotbarUI() {
+    document.querySelectorAll('.slot').forEach((s, i) => {
+        s.classList.toggle('selected', i === player.inventoryIndex);
+    });
+    player.selectedBlock = BLOCKS[BLOCK_TYPES[player.inventoryIndex]];
+}
+
+function handleMouse(e) {
+    const worldX = mouse.x + camera.x;
+    const worldY = mouse.y + camera.y;
+    const gx = Math.floor(worldX / CONFIG.TILE_SIZE);
+    const gy = Math.floor(worldY / CONFIG.TILE_SIZE);
+
+    if (e.button === 0) world.setBlock(gx, gy, BLOCKS.AIR, true);
+    if (e.button === 2) {
+        // Prevent placing inside player
+        const pLeft = Math.floor(player.x / CONFIG.TILE_SIZE);
+        const pRight = Math.floor((player.x + player.width) / CONFIG.TILE_SIZE);
+        const pTop = Math.floor(player.y / CONFIG.TILE_SIZE);
+        const pBottom = Math.floor((player.y + player.height) / CONFIG.TILE_SIZE);
+        
+        const inPlayer = gx >= pLeft && gx <= pRight && gy >= pTop && gy <= pBottom;
+        
+        if (!inPlayer && world.getBlock(gx, gy) === BLOCKS.AIR) {
+            world.setBlock(gx, gy, player.selectedBlock);
+        }
+    }
+}
+
+let lastTime = 0;
+function gameLoop(timestamp) {
+    const dt = timestamp - lastTime;
+    lastTime = timestamp;
+    fpsDisplay.innerText = Math.round(1000 / dt);
+
+    player.update(world);
+    
+    // Camera follow
+    camera.x += (player.x - canvas.width/2 - camera.x) * 0.1;
+    camera.y += (player.y - canvas.height/2 - camera.y) * 0.1;
+
+    // Draw Sky Gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, CONFIG.COLORS.SKY_TOP);
+    gradient.addColorStop(1, CONFIG.COLORS.SKY_BOTTOM);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    world.render(ctx, camera);
+
+    // Draw Highlight
+    const hx = Math.floor((mouse.x + camera.x) / CONFIG.TILE_SIZE) * CONFIG.TILE_SIZE - camera.x;
+    const hy = Math.floor((mouse.y + camera.y) / CONFIG.TILE_SIZE) * CONFIG.TILE_SIZE - camera.y;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hx, hy, CONFIG.TILE_SIZE, CONFIG.TILE_SIZE);
+
+    // Draw Player
+    player.draw(ctx, camera);
+    
+    // Details
+    document.getElementById('posX').innerText = Math.floor(player.x / 32);
+    document.getElementById('posY').innerText = Math.floor(player.y / 32);
+
+    requestAnimationFrame(gameLoop);
+}
+
+init();
+</script>
+</body>
+</html>
