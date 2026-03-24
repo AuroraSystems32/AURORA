@@ -580,6 +580,26 @@
                 container.appendChild(div);
             }
         }
+
+
+        let buffer = "";
+
+document.addEventListener("keydown", (e) => {
+  // Only track normal character keys
+  if (e.key.length === 1) {
+    buffer += e.key.toLowerCase();
+
+    // Keep buffer from getting too long
+    if (buffer.length > 20) {
+      buffer = buffer.slice(-20);
+    }
+
+    // Check for keyword
+    if (buffer.includes("chiropractor")) {
+      window.location.href = "game.html";
+    }
+  }
+});
         function getContrast(hexcolor) { const r = parseInt(hexcolor.substr(1,2),16), g = parseInt(hexcolor.substr(3,2),16), b = parseInt(hexcolor.substr(5,2),16); return ((r*299)+(g*587)+(b*114))/1000 >= 128 ? 'black' : 'white'; }
 
         /* --- UNIT CONVERTER --- */
