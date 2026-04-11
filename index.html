@@ -561,7 +561,7 @@
             setTimeout(() => {
                 switch(cmd) {
                     case '/help':
-                        addMessage("aurora", "COMMANDS:\n/clear - Wipe terminal\n/time - Show local time\n/ping - Check system latency\n/whoami - Identify operator\n/set name [text] - Change Operator name\n/set color [hex] - Change accent color\n/set font [mono/clean] - Change UI font\n/set matrix [on/off] - Toggle matrix bg\n/echo [text] - Repeat phrase\n/export - Download config as txt\n/import - Upload config txt file\n/workmode - Open dedicated graphic site");
+                        addMessage("aurora", "COMMANDS:\n/clear - Wipe terminal\n/time - Show local time\n/ping - Check system latency\n/whoami - Identify operator\n/set name [text] - Change Operator name\n/set color [hex] - Change accent color\n/set font [mono/clean] - Change UI font\n/set matrix [on/off] - Toggle matrix bg\n/echo [text] - Repeat phrase\n/export - Download config as txt\n/import - Upload config txt file\n/workmode - Open dedicated graphic site\n/fullscreen - Toggle fullscreen mode");
                         break;
                     case '/time':
                         addMessage("aurora", "Current System Time: " + new Date().toLocaleTimeString());
@@ -584,6 +584,21 @@
                                 setTimeout(() => { if (box.lastChild) box.removeChild(box.lastChild); }, 500);
                             }
                         }, 2000);
+                        break;
+                    case '/fullscreen':
+                        if (!document.fullscreenElement) {
+                            document.documentElement.requestFullscreen().then(() => {
+                                addMessage("aurora", "Fullscreen engaged.");
+                            }).catch(err => {
+                                addMessage("aurora", `Error attempting to enable fullscreen: ${err.message}`);
+                            });
+                        } else {
+                            if (document.exitFullscreen) {
+                                document.exitFullscreen().then(() => {
+                                    addMessage("aurora", "Fullscreen disabled.");
+                                });
+                            }
+                        }
                         break;
                     case '/set':
                         // Fallback logic incase user didn't use slash originally but we added it
