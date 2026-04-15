@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AURORA Blueprint 3D Scanner V2.1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  
+  <style>
+    :root {
+      --bg-base: #020617;
+      --panel-bg: rgba(15, 23, 42, 0.65);
+      --text-main: #f8fafc;
+      --text-dim: #94a3b8;
+      --accent: #10b981; 
+      --accent-glow: rgba(16, 185, 129, 0.2);
+      --border: rgba(255, 255, 255, 0.1);
+      --font-family: 'Inter', sans-serif;
+    }
+
+    /* Light Theme Overrides */
+    body.light-theme {
+      --bg-base: #f8fafc;
+      --panel-bg: rgba(255, 255, 255, 0.85);
+      --text-main: #0f172a;
+      --text-dim: #64748b;
+      --border: rgba(0, 0, 0, 0.15);
+      --accent-glow: rgba(16, 185, 129, 0.4);
+    }
+    
+    body.light-theme .noise {
+      opacity: 0.15;
+      filter: invert(1); /* Flips the noise to be dark on the light background */
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      transition: background-color 0.4s ease, color 0.4s ease;
+    }
+
+    #app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Container for Three.js */
+    #scene-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .noise {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.05;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,0.25) 0 0.8px, transparent 1px),
+        radial-gradient(circle at 80% 70%, rgba(255,255,255,0.18) 0 0.8px, transparent 1px);
+      background-size: 17px 17px, 23px 23px;
+      mix-blend-mode: screen;
+      animation: drift 12s linear infinite;
+      transition: opacity 0.4s, filter 0.4s;
+    }
+
+    @keyframes drift {
+      from { transform: translateY(0px); }
+      to { transform: translateY(20px); }
+    }
+
+    .hud {
+      position: absolute;
+      inset: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .topbar {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+      border-radius: 12px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+      transition: background 0.4s, border-color 0.4s;
+    }
+
+    .brand { display: flex; flex-direction: column; gap: 4px; }
+    .brand h1 { margin: 0; font-size: clamp(28px, 3vw, 32px); letter-spacing: 3px; font-weight: 600; line-height: 1; }
+    .brand .accent { color: var(--accent); text-shadow: 0 0 10px var(--accent-glow); }
+    .brand p { margin: 0; color: var(--text-dim); font-size: clamp(10px, 1vw, 12px); letter-spacing: 0.1em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+
+    .status { font-family: 'JetBrains Mono', monospace; color: var(--text-dim); font-size: 13px; display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
+    .status strong { color: var(--text-main); font-weight: 700; }
+    .online { color: var(--accent) !important; text-shadow: 0 0 10px var(--accent-glow); }
+
+    .footer {
+      margin-top: auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      pointer-events: none;
+    }
+
+    .controls-wrapper {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      pointer-events: auto;
+      padding: 12px 16px;
+      border-radius: 8px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(8px);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .chip:hover {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: var(--accent);
+      color: var(--text-main);
+    }
+    
+    .chip:active {
+      transform: scale(0.98);
+    }
+
+    .hotkey {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      color: var(--text-main);
+    }
+
+    .hint strong { color: var(--accent); }
+    #fileInput { display: none; }
+
+    @media (max-width: 700px) {
+      .hud { inset: 12px; }
+      .topbar { padding: 14px 16px; flex-direction: column; text-align: center; }
+      .status { font-size: 11px; gap: 10px; justify-content: center; margin-top: 10px;}
+      .footer { flex-direction: column; align-items: stretch; text-align: center;}
+      .controls-wrapper { flex-direction: column; align-items: stretch; }
+      .hotkey { display: none; } /* Hide hotkeys on mobile */
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="scene-container"></div>
+    <div class="noise"></div>
+
+    <div class="hud">
+      <div class="topbar">
+        <div class="brand">
+          <h1>AU<span class="accent">RO</span>RA V2.1</h1>
+          <p>Holographic Point-Cloud Engine</p>
+        </div>
+        <div class="status">
+          <span>OP: <strong id="opName">COMMANDER</strong></span>
+          <span>SYS: <strong class="online">ONLINE</strong></span>
+          <span>MODE: <strong>3D SCAN</strong></span>
+        </div>
+      </div>
+
+      <div class="footer">
+        <input type="file" id="fileInput" accept="image/png, image/jpeg, image/webp" />
+        <div class="controls-wrapper">
+          <div class="chip" id="uploadBtn">
+            <span class="hotkey">U</span> <strong>UPLOAD TARGET</strong>
+          </div>
+          <div class="chip" id="toggleRotationBtn">
+            <span class="hotkey">SPACE</span> <strong id="rotationStatus">STOP ROTATION</strong>
+          </div>
+          <div class="chip" id="toggleThemeBtn">
+            <span class="hotkey">B</span> <strong>BG: <span id="themeStatus">DARK</span></strong>
+          </div>
+        </div>
+        <div class="chip hint"><strong>DRAG:</strong> ROTATE | <strong>SCROLL:</strong> ZOOM | <strong>R-CLICK:</strong> PAN</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- THREE.JS SETUP ---
+    const container = document.getElementById('scene-container');
+    const scene = new THREE.Scene();
+    
+    // Grid Helper (changed to let so we can recreate it on theme change)
+    let gridHelper = new THREE.GridHelper(400, 40, 0x10b981, 0x223344);
+    gridHelper.position.y = -100;
+    scene.add(gridHelper);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 2000);
+    camera.position.set(0, 0, 400);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); // Alpha true makes bg transparent to CSS
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.autoRotate = true; 
+    controls.autoRotateSpeed = 1.0;
+
+    let particleSystem;
+
+    // --- LOGIC FUNCTIONS ---
+    
+    function triggerUpload() {
+      document.getElementById('fileInput').click();
+    }
+
+    function toggleRotation() {
+      controls.autoRotate = !controls.autoRotate;
+      document.getElementById('rotationStatus').innerText = controls.autoRotate ? "STOP ROTATION" : "START ROTATION";
+    }
+
+    let isDarkTheme = true;
+    function toggleTheme() {
+      isDarkTheme = !isDarkTheme;
+      document.body.classList.toggle('light-theme', !isDarkTheme);
+      document.getElementById('themeStatus').innerText = isDarkTheme ? "DARK" : "LIGHT";
+      
+      // Update the 3D Grid lines to contrast better with the new background
+      const currentY = gridHelper.position.y;
+      scene.remove(gridHelper);
+      
+      const centerColor = 0x10b981; // Keep the green crosshair
+      const gridColor = isDarkTheme ? 0x223344 : 0xcbd5e1; // Dark blue vs Slate gray
+      
+      gridHelper = new THREE.GridHelper(400, 40, centerColor, gridColor);
+      gridHelper.position.y = currentY;
+      scene.add(gridHelper);
+    }
+
+    // --- EVENT LISTENERS (UI Clicks & Keybinds) ---
+
+    document.getElementById('uploadBtn').addEventListener('click', triggerUpload);
+    document.getElementById('toggleRotationBtn').addEventListener('click', toggleRotation);
+    document.getElementById('toggleThemeBtn').addEventListener('click', toggleTheme);
+
+    // Global Keybinds
+    window.addEventListener('keydown', (e) => {
+      // Prevent triggering if user is somehow typing in an input field (good practice)
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      switch(e.code) {
+        case 'KeyU':
+          triggerUpload();
+          break;
+        case 'Space':
+          e.preventDefault(); // Stop spacebar from scrolling the page down
+          toggleRotation();
+          break;
+        case 'KeyB':
+          toggleTheme();
+          break;
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- IMAGE PROCESSING TO 3D ---
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+          scanImageToParticles(img);
+        }
+        img.src = event.target.result;
+      }
+      reader.readAsDataURL(file);
+    });
+
+    function scanImageToParticles(img) {
+      if (particleSystem) {
+        scene.remove(particleSystem);
+        particleSystem.geometry.dispose();
+        particleSystem.material.dispose();
+      }
+
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      
+      const maxRes = 350; 
+      let scanW = img.width;
+      let scanH = img.height;
+      
+      if (scanW > scanH) {
+        scanH = Math.floor(scanH * (maxRes / scanW));
+        scanW = maxRes;
+      } else {
+        scanW = Math.floor(scanW * (maxRes / scanH));
+        scanH = maxRes;
+      }
+
+      tempCanvas.width = scanW;
+      tempCanvas.height = scanH;
+      tempCtx.drawImage(img, 0, 0, scanW, scanH);
+      const imgData = tempCtx.getImageData(0, 0, scanW, scanH).data;
+
+      const geometry = new THREE.BufferGeometry();
+      const positions = [];
+      const colors = [];
+
+      const scale = 1.5; 
+      const depthMultiplier = 80;
+
+      for (let y = 0; y < scanH; y++) {
+        for (let x = 0; x < scanW; x++) {
+          const i = (y * scanW + x) * 4;
+          const r = imgData[i] / 255;
+          const g = imgData[i+1] / 255;
+          const b = imgData[i+2] / 255;
+          const a = imgData[i+3] / 255;
+
+          if (a < 0.1) continue; 
+
+          const brightness = (0.299 * r + 0.587 * g + 0.114 * b);
+          
+          const px = (x - scanW / 2) * scale;
+          const py = -(y - scanH / 2) * scale;
+          const pz = (brightness - 0.5) * depthMultiplier;
+
+          positions.push(px, py, pz);
+          colors.push(r, g, b);
+        }
+      }
+
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      const material = new THREE.PointsMaterial({
+        size: 2, 
+        vertexColors: true,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.9,
+        sizeAttenuation: true
+      });
+
+      particleSystem = new THREE.Points(geometry, material);
+      
+      // Calculate Bounding Box to prevent clipping through the grid
+      geometry.computeBoundingBox();
+      const minY = geometry.boundingBox.min.y;
+      
+      // Shift the model so its lowest point rests exactly on the grid
+      particleSystem.position.y = gridHelper.position.y - minY;
+      
+      // Center the camera focus on the middle of the new object
+      const heightOffset = (geometry.boundingBox.max.y - geometry.boundingBox.min.y) / 2;
+      controls.target.set(0, gridHelper.position.y + heightOffset, 0);
+      camera.position.set(0, controls.target.y, Math.max(scanW, scanH) * scale * 1.5);
+      
+      scene.add(particleSystem);
+    }
+
+    // --- DEFAULT PLACEHOLDER SHAPE ---
+    function createDefaultHolo() {
+      const geometry = new THREE.TorusKnotGeometry( 50, 15, 250, 64 );
+      const material = new THREE.PointsMaterial({ 
+        color: 0x10b981, 
+        size: 1.5,
+        transparent: true,
+        opacity: 0.6
+      });
+      particleSystem = new THREE.Points( geometry, material );
+      
+      geometry.computeBoundingBox();
+      const minY = geometry.boundingBox.min.y;
+      particleSystem.position.y = gridHelper.position.y - minY;
+      
+      const heightOffset = (geometry.boundingBox.max.y - geometry.boundingBox.min.y) / 2;
+      controls.target.set(0, gridHelper.position.y + heightOffset, 0);
+
+      scene.add( particleSystem );
+    }
+    createDefaultHolo();
+
+    // --- RENDER LOOP ---
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update(); 
+      renderer.render(scene, camera);
+    }
+    
+    animate();
+  </script>
+</body>
+</html>
