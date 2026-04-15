@@ -561,7 +561,7 @@
             setTimeout(() => {
                 switch(cmd) {
                     case '/help':
-                        addMessage("aurora", "COMMANDS:\n/clear - Wipe terminal\n/time - Show local time\n/ping - Check system latency\n/whoami - Identify operator\n/set name [text] - Change Operator name\n/set color [hex] - Change accent color\n/set font [mono/clean] - Change UI font\n/set matrix [on/off] - Toggle matrix bg\n/echo [text] - Repeat phrase\n/export - Download config as txt\n/import - Upload config txt file\n/workmode - Open dedicated graphic site\n/fullscreen - Toggle fullscreen mode");
+                        addMessage("aurora", "COMMANDS:\n/clear - Wipe terminal\n/time - Show local time\n/ping - Check system latency\n/whoami - Identify operator\n/set name [text] - Change Operator name\n/set color [hex] - Change accent color\n/set font [mono/clean] - Change UI font\n/set matrix [on/off] - Toggle matrix bg\n/echo [text] - Repeat phrase\n/export - Download config as txt\n/import - Upload config txt file\n/workmode - Open dedicated graphic site\n/fullscreen - Toggle fullscreen mode\n/blueprint - open blueprint site");
                         break;
                     case '/time':
                         addMessage("aurora", "Current System Time: " + new Date().toLocaleTimeString());
@@ -687,6 +687,21 @@
                         addMessage("aurora", `Command '${errCmd}' not recognized. Type help.`);
                 }
             }, 300);
+
+
+    
+                    case '/blueprint':
+                        addMessage("aurora", "Initializing blueprint graph environment...");
+                        window.open('blueprint.html', '_blank');
+                        break;
+                    default:
+                        // Strip slash if we added it for error message clarity
+                        const errCmd = cmd.startsWith('/') ? cmd.substring(1) : cmd;
+                        addMessage("aurora", `Command '${errCmd}' not recognized. Type help.`);
+                }
+            }, 300);
+
+            
         }
 
         // Typing effect for Aurora messages
